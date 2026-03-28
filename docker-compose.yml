@@ -1,0 +1,76 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: musicbot_db
+    environment:
+      POSTGRES_DB: musicbot
+      POSTGRES_USER: musicbot
+      POSTGRES_PASSWORD: changeme_securepassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U musicbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - musicbot_network
+
+  # Lavalink Audio Server
+  lavalink:
+    image: lavalink/lavalink:latest
+    container_name: musicbot_lavalink
+    environment:
+      SERVER_PORT: 2333
+      LAVALINK_SERVER_PASSWORD: youshallnotpass
+    ports:
+      - "2333:2333"
+    volumes:
+      - ./docker/lavalink/application.yml:/lavalink/application.yml
+    networks:
+      - musicbot_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2333/info"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+
+  # Music Bot
+  musicbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: musicbot
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DATABASE_URL: postgresql://musicbot:changeme_securepassword@db:5432/musicbot
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+      LAVALINK_HOST: lavalink
+      LAVALINK_PORT: 2333
+      LAVALINK_PASSWORD: youshallnotpass
+      NODE_ENV: production
+      LOG_LEVEL: INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      lavalink:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./src:/app/src
+    networks:
+      - musicbot_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  musicbot_network:
+    driver: bridge
